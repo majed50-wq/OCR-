@@ -1673,7 +1673,7 @@ function analyzeGeometry(base, boxes){
     if(isPageNumberText(l.text)&&(cy<0.14||cy>0.86)&&w<0.5){ role="decoration"; kind="pageNumber"; }
     else if(isCounterText(l.text)&&w<0.55&&(cy<0.16||cy>0.84||outside)){ role="decoration"; kind="counter"; }
     else if(hasSideLabel(l.text)&&w<0.5){ role="decoration"; kind="sideLabel"; }
-    else if((cy<0.11||cy>0.89)&&w<0.6*colW){ role="decoration"; kind=cy<0.5?"runningHead":"runningFoot"; }
+    else if(((cy<0.11&&gapDown>1.6*Gall)||(cy>0.89&&gapUp>1.6*Gall))&&w<0.6*colW){ role="decoration"; kind=cy<0.5?"runningHead":"runningFoot"; }
     else if(outside&&w<0.3){ role="decoration"; kind="marginNote"; }
     else if(w<0.22&&(cy<0.12||cy>0.88||outside)&&isolated){ role="decoration"; kind="edge"; }
     if(role){ roles[i]=role; kinds[i]=kind; }
