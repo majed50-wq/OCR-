@@ -257,6 +257,18 @@
       </div>
     </div>
 
+    <div class="field" style="margin-bottom:16px">
+      <label class="check" style="margin:0"><input type="checkbox" id="aiScanClean"><span><b>Organize with AI while scanning</b> &mdash; after each page is read, an AI pass cleans and structures the text so the result comes out tidy in one run. Uses your Gemini key and counts toward the daily AI calls. You can still Revert to raw OCR afterwards.</span></label>
+      <div id="aiScanModeWrap" style="display:none;margin-top:11px">
+        <label for="aiScanMode" style="display:block;font-size:12px;color:var(--muted);margin-bottom:7px;font-weight:500">Organize level</label>
+        <select id="aiScanMode">
+          <option value="cleanup">Cleanup &mdash; tidy text, keep words exact (fastest)</option>
+          <option value="rebuild" selected>Smart Rebuild &mdash; detect headings, lists, questions (recommended)</option>
+          <option value="layout">Layout Reconstruction &mdash; recreate full page structure</option>
+        </select>
+      </div>
+    </div>
+
     <div class="settings">
       <div class="field">
         <label>Language</label>
@@ -1370,8 +1382,18 @@ runBtn.addEventListener("click", async function(){
   const adv={ deskew:$("deskew").checked, sharpen:$("sharpen").checked, despeckle:$("despeckle").checked };
   const preferDict=$("preferdict").checked, tidyOn=$("tidy").checked, splitOn=$("split").checked;
   const optimize=optChk.checked, isAuto=lang==="auto", useEmbedded=$("embedded").checked;
+  let aiScanOn = !!($("aiScanClean") && $("aiScanClean").checked);
+  const aiScanMode = ($("aiScanMode") && $("aiScanMode").value) || "rebuild";
   buildDict($("userdict").value);
   const collected=[];
+
+  /* if organize-while-scanning is on, make sure we have a Gemini key up front so
+     a long OCR run is not wasted; if the key is missing/declined, drop the AI pass
+     and still extract the raw text. */
+  if(aiScanOn){
+    try{ requireGeminiKey(); }
+    catch(e){ aiScanOn=false; showToast("AI organize turned off for this run \u2014 "+((e&&e.message)||"no Gemini key")+".", true); }
+  }
 
   try{
     if(ENGINE==="tesseract") await ensureWorker(useLegacy, mQuality);
@@ -1458,8 +1480,25 @@ runBtn.addEventListener("click", async function(){
     PAGE_STRUCT=buildStructFromCollected(collected);
     STRUCT_VERSION++; GEN_CACHE=null; LAST_AI_CHANGES=null;
     clearRunCheckpoint();
+
+    /* ---- optional: organize each page with AI as part of the same run ---- */
+    let __rawBackup=null;
+    if(aiScanOn && PAGE_STRUCT.length){
+      __rawBackup=PAGE_STRUCT;                     /* keep raw OCR so Revert still works */
+      setBar(0); pLabel.textContent="Organizing with AI..."; pSub.textContent="";
+      try{
+        const out=await aiProcessStruct(PAGE_STRUCT, aiScanMode, function(i,n){ pSub.textContent="Organizing page "+(i+1)+"/"+n+" ("+aiScanMode+")..."; setBar(i/n); });
+        setBar(1);
+        PAGE_STRUCT=out; STRUCT_VERSION++; GEN_CACHE=null; LAST_AI_CHANGES=null;
+      }catch(e){
+        __rawBackup=null;                          /* organize failed: keep the raw OCR we already have */
+        showToast("AI organize failed ("+((e&&e.message)||"error")+") \u2014 kept raw OCR.", true);
+      }
+    }
+
     snapshotEngineRun();
     renderResults();
+    if(__rawBackup){ RAW_STRUCT_BACKUP=__rawBackup; const rv=$("aiProcRevert"); if(rv) rv.disabled=false; output.classList.add("ai-fixed"); }
   } catch(err){
     /* Salvage: keep every page that was extracted BEFORE the failure so a single
        bad page (network drop, safety block, timeout...) never wipes the whole run. */
@@ -2336,6 +2375,18 @@ function resetAiProcState(){ RAW_STRUCT_BACKUP=null; const r=$("aiProcRevert"); 
 /* pre-select + persist the Gemini model choice */
 (function(){ const sel=$("geminiModel"); if(!sel) return; if(GEMINI_MODEL&&GEMINI_MODELS[GEMINI_MODEL]) sel.value=GEMINI_MODEL; sel.addEventListener("change",function(){ setGeminiModel(sel.value); showToast("Gemini model set to "+sel.value,false); }); })();
 
+/* "Organize with AI while scanning" toggle + level, persisted in this browser */
+(function(){
+  const chk=$("aiScanClean"), wrap=$("aiScanModeWrap"), sel=$("aiScanMode");
+  if(!chk||!wrap) return;
+  try{ if(localStorage.getItem("ai_scan_clean")==="1") chk.checked=true; }catch(e){}
+  try{ const m=localStorage.getItem("ai_scan_mode"); if(m&&sel){ const ok=Array.prototype.some.call(sel.options,function(o){return o.value===m;}); if(ok) sel.value=m; } }catch(e){}
+  function sync(){ wrap.style.display=chk.checked?"block":"none"; }
+  sync();
+  chk.addEventListener("change",function(){ sync(); try{ localStorage.setItem("ai_scan_clean",chk.checked?"1":"0"); }catch(e){} });
+  if(sel) sel.addEventListener("change",function(){ try{ localStorage.setItem("ai_scan_mode",sel.value); }catch(e){} });
+})();
+
 $("aiModeSeg").addEventListener("click",function(e){ const b=e.target.closest("button"); if(!b) return; AI_PROC_MODE=b.dataset.mode; Array.prototype.forEach.call($("aiModeSeg").children,function(c){ c.setAttribute("aria-pressed",String(c===b)); }); setAiModeDesc(); });
 setAiModeDesc();
 
@@ -2438,28 +2489,38 @@ function refreshDerivedViews(){
   try{ saveSession(); }catch(e){}
 }
 
+/* Per-page AI organize pass. Shared by the post-run "AI Processing" card and the
+   inline "Organize with AI while scanning" option, so both behave identically.
+   mode: "cleanup" (text only) | "rebuild" | "layout" (both send the page image). */
+async function aiProcessStruct(source, mode, onProgress){
+  const out=[];
+  for(let i=0;i<source.length;i++){
+    const st=source[i];
+    if(onProgress) onProgress(i, source.length);
+    const ptext=rawPageText(st); let md;
+    if(mode==="rebuild" || mode==="layout"){
+      const parts=[{text:(mode==="layout"?layoutPrompt(ptext):rebuildPrompt(ptext))}];
+      if(st.original){ const b64=String(st.original).split(",")[1]; if(b64) parts.push(imagePart(b64)); }
+      md=stripFences(await geminiGenerate(parts,null));
+    } else {
+      md=stripFences(await geminiGenerate([{text:cleanupPrompt(ptext)}],null));
+    }
+    out.push(buildProcessedStruct(md, st, i));
+    await yieldUI();
+  }
+  return out;
+}
+
 $("aiProcRun").addEventListener("click", async function(){
   if(busy) return;
   if(!PAGE_STRUCT.length){ showToast("Run an extraction first.",true); return; }
   try{ requireGeminiKey(); }catch(e){ showToast((e&&e.message)||"A Gemini API key is required.",true); return; }
   const mode=AI_PROC_MODE, btn=this, old=btn.textContent;
   if(!RAW_STRUCT_BACKUP) RAW_STRUCT_BACKUP=PAGE_STRUCT;     /* always process from the raw OCR */
-  const source=RAW_STRUCT_BACKUP, out=[];
+  const source=RAW_STRUCT_BACKUP;
   busy=true; btn.disabled=true; $("aiProcRevert").disabled=true; runBtn.disabled=true; clearBtn.disabled=true;
   try{
-    for(let i=0;i<source.length;i++){
-      const st=source[i]; btn.textContent="Processing "+(i+1)+"/"+source.length+"...";
-      const ptext=rawPageText(st); let md;
-      if(mode==="rebuild" || mode==="layout"){
-        const parts=[{text:(mode==="layout"?layoutPrompt(ptext):rebuildPrompt(ptext))}];
-        if(st.original){ const b64=String(st.original).split(",")[1]; if(b64) parts.push(imagePart(b64)); }
-        md=stripFences(await geminiGenerate(parts,null));
-      } else {
-        md=stripFences(await geminiGenerate([{text:cleanupPrompt(ptext)}],null));
-      }
-      out.push(buildProcessedStruct(md, st, i));
-      await yieldUI();
-    }
+    const out=await aiProcessStruct(source, mode, function(i,n){ btn.textContent="Processing "+(i+1)+"/"+n+"..."; });
     PAGE_STRUCT=out; STRUCT_VERSION++; GEN_CACHE=null; LAST_AI_CHANGES=null;
     snapshotEngineRun();
     refreshDerivedViews(); output.classList.add("ai-fixed");
