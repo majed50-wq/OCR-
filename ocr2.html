@@ -838,16 +838,19 @@ const ARABIC_V3 = {
   det: PADDLE_DET,
   rec: "https://huggingface.co/monkt/paddleocr-onnx/resolve/main/languages/arabic/rec.onnx",
   dict:"https://huggingface.co/monkt/paddleocr-onnx/resolve/main/languages/arabic/dict.txt",
-  recH:48, rtl:true
+  recH:48, rtl:true, softSpace:true
 };
 const ARABIC_V5 = {
   label: "Arabic (PP-OCRv5)",
   det: PADDLE_DET,
-  rec: "models/arabic_pp-ocrv5_mobile_rec.onnx",
-  dict:"models/ppocrv5_arabic_dict.txt",
-  recH:48, rtl:true
+  /* Same-origin files in this repo's root (next to ocr2.html). The dict filename
+     contains a space, so it is URL-encoded as %20; renaming it to remove the space
+     (e.g. ppocrv5_arabic_dict.txt) and updating this line is cleaner if you prefer. */
+  rec: "arabic_pp-ocrv5_mobile_rec.onnx",
+  dict:"ppocrv5_arabic_dict%20.txt",
+  recH:48, rtl:true, softSpace:false
 };
-const ARABIC_SET = ARABIC_V3;   /* flip to ARABIC_V5 after self-hosting the two files */
+const ARABIC_SET = ARABIC_V5;   /* verified: height 48, delta 2, emits spaces natively */
 
 const PADDLE_MODEL_SETS = {
   en: {
@@ -961,7 +964,7 @@ class PaddleOcrAdapter extends OcrAdapter {
   _decode(idx, C){ if(idx<=0) return null; if(C===this.dict.length+2 && idx===C-1) return " "; const ch=this.dict[idx-1]; return (ch!=null)?ch:null; }
   async recognize(canvas, opts, progress){
     await this.init(progress);
-    const ort=window.ort, recH=this.recH, set=activeModels(), rtl=!!set.rtl;
+    const ort=window.ort, recH=this.recH, set=activeModels(), rtl=!!set.rtl, softSpace=!!set.softSpace;
     if(progress) progress("Detecting text lines...");
     const pre=detPreprocess(canvas, 960);
     const dfeed={}; dfeed[this.det.inputNames[0]]=new ort.Tensor("float32", pre.data, [1,3,pre.nh,pre.nw]);
@@ -1013,7 +1016,7 @@ class PaddleOcrAdapter extends OcrAdapter {
             if(v>bv){bv=v;best=c;}
             if(c!==0 && v>nbv){nbv=v;bestNB=c;} }
           if(best===0){
-            if(rtl && SPACE_CLS>0 && bestNB===SPACE_CLS) pendingSpace=true;
+            if(softSpace && SPACE_CLS>0 && bestNB===SPACE_CLS) pendingSpace=true;
           } else if(best!==last){
             const ch=this._decode(best,C);
             if(ch!=null){
