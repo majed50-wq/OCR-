@@ -233,10 +233,12 @@
 
     <div class="field" style="margin-bottom:16px">
       <label>OCR engine</label>
-      <div class="seg" id="engineSeg" role="group" aria-label="OCR engine">
+      <div class="seg" id="engineSeg" role="group" aria-label="OCR engine" style="flex-wrap:wrap">
         <button data-engine="tesseract" aria-pressed="true">Tesseract</button>
         <button data-engine="paddle" aria-pressed="false">PaddleOCR</button>
         <button data-engine="gemini" aria-pressed="false">Gemini Vision</button>
+        <button data-engine="groq" aria-pressed="false">Groq</button>
+        <button data-engine="openrouter" aria-pressed="false">OpenRouter</button>
       </div>
       <p class="hint" id="engineHint" style="display:none">PaddleOCR (PP-OCRv5) runs its own detection + recognition on WebAssembly, so the Tesseract model / sweep / preprocessing options are ignored. The <b>Language</b> control picks the model: English by default, or Arabic when Language = Arabic. Models load on first use and are cached.</p>
       <button class="mini" id="paddleDiagBtn" type="button" style="display:none;margin-top:10px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 1 7 7c0 3-2 4-2 6H7c0-2-2-3-2-6a7 7 0 0 1 7-7z"/><path d="M9 21h6"/></svg>Run PaddleOCR diagnostics</button>
@@ -254,6 +256,34 @@
           <p class="hint">Used by Gemini Vision OCR, Fix with AI, and the AI Processing modes. Saved in this browser.</p>
         </div>
         <div class="ai-usage" style="margin-top:10px"></div>
+      </div>
+      <div id="groqKeyField" style="display:none;margin-top:12px">
+        <label for="groqKey" style="display:block;font-size:12px;color:var(--muted);margin-bottom:7px;font-weight:500">Groq API key &mdash; free cloud vision OCR (Llama 4)</label>
+        <input type="password" id="groqKey" spellcheck="false" autocomplete="off" placeholder="gsk_..." style="width:100%;background:rgba(0,0,0,.25);color:var(--text);border:1px solid var(--gold-line);border-radius:11px;padding:11px 13px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px">
+        <div style="margin-top:13px">
+          <label for="groqModel" style="display:block;font-size:12px;color:var(--muted);margin-bottom:7px;font-weight:500">Groq model</label>
+          <select id="groqModel" style="width:100%;background:rgba(0,0,0,.25);color:var(--text);border:1px solid var(--gold-line);border-radius:11px;padding:11px 13px;font-family:'Sora';font-size:13px;font-weight:600">
+            <option value="meta-llama/llama-4-scout-17b-16e-instruct">Llama 4 Scout &mdash; vision (recommended)</option>
+            <option value="meta-llama/llama-4-maverick-17b-128e-instruct">Llama 4 Maverick &mdash; vision (heavier)</option>
+          </select>
+        </div>
+        <p class="hint">Free tier, no credit card &mdash; very fast. Get a key at <b>console.groq.com</b>. Stored only in this browser.</p>
+      </div>
+      <div id="orKeyField" style="display:none;margin-top:12px">
+        <label for="orKey" style="display:block;font-size:12px;color:var(--muted);margin-bottom:7px;font-weight:500">OpenRouter API key &mdash; free cloud vision OCR (many models)</label>
+        <input type="password" id="orKey" spellcheck="false" autocomplete="off" placeholder="sk-or-v1-..." style="width:100%;background:rgba(0,0,0,.25);color:var(--text);border:1px solid var(--gold-line);border-radius:11px;padding:11px 13px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px">
+        <div style="margin-top:13px">
+          <label for="orModel" style="display:block;font-size:12px;color:var(--muted);margin-bottom:7px;font-weight:500">OpenRouter model</label>
+          <select id="orModel" style="width:100%;background:rgba(0,0,0,.25);color:var(--text);border:1px solid var(--gold-line);border-radius:11px;padding:11px 13px;font-family:'Sora';font-size:13px;font-weight:600">
+            <option value="meta-llama/llama-4-maverick:free">Llama 4 Maverick (free) &mdash; vision</option>
+            <option value="meta-llama/llama-4-scout:free">Llama 4 Scout (free) &mdash; vision</option>
+            <option value="openrouter/free">Auto free router &mdash; picks any available free vision model</option>
+          </select>
+        </div>
+        <p class="hint">Free tier, no credit card. Free models end in <b>:free</b>. Get a key at <b>openrouter.ai/keys</b>. Stored only in this browser.</p>
+      </div>
+      <div id="aiFallbackWrap" style="display:none;margin-top:14px">
+        <label class="check" style="margin:0"><input type="checkbox" id="aiFallback" checked><span><b>Auto-switch if a cloud engine is busy</b> &mdash; if the selected engine returns a rate-limit (429) or unavailable (503) error, automatically try your other configured cloud engines (Gemini, Groq, OpenRouter) so a page is not lost.</span></label>
       </div>
     </div>
 
@@ -492,7 +522,7 @@ let GEN_CACHE=null;         /* { sig, pages:[{label, original, gen:[dataURL,...]
 let cmpIdx=0, cmpView="all";
 let RECON_MODE="layout";    /* "layout" = match original geometry, "reflow" = clean document */
 let ENGINE="tesseract";     /* selected OCR engine */
-const ENGINE_LABELS={ tesseract:"Tesseract", paddle:"PaddleOCR Mobile", gemini:"Gemini Vision" };
+const ENGINE_LABELS={ tesseract:"Tesseract", paddle:"PaddleOCR Mobile", gemini:"Gemini Vision", groq:"Groq", openrouter:"OpenRouter" };
 let ENGINE_RUNS={};         /* engineId -> { id, label, struct, stats, ts, _genCache } */
 let RAW_STRUCT_BACKUP=null;  /* raw OCR PAGE_STRUCT kept before AI Processing, for Revert */
 let CMP=null;               /* {engs, genByEng, n} cache for the comparison workspace */
@@ -574,7 +604,7 @@ function syncOptimizeUI(){
 }
 optChk.addEventListener("change",syncOptimizeUI);
 $("langSeg").addEventListener("click",function(e){ const b=e.target.closest("button"); if(!b)return; lang=b.dataset.lang; Array.prototype.forEach.call($("langSeg").children,function(c){ c.setAttribute("aria-pressed",String(c===b)); }); setDefaultsForLang(lang); });
-$("engineSeg").addEventListener("click",function(e){ const b=e.target.closest("button"); if(!b)return; ENGINE=b.dataset.engine; Array.prototype.forEach.call($("engineSeg").children,function(c){ c.setAttribute("aria-pressed",String(c===b)); }); const isP=(ENGINE==="paddle"); $("engineHint").style.display=isP?"block":"none"; $("paddleDiagBtn").style.display=isP?"inline-flex":"none"; $("geminiKeyField").style.display=(ENGINE==="gemini")?"block":"none"; });
+$("engineSeg").addEventListener("click",function(e){ const b=e.target.closest("button"); if(!b)return; ENGINE=b.dataset.engine; Array.prototype.forEach.call($("engineSeg").children,function(c){ c.setAttribute("aria-pressed",String(c===b)); }); const isP=(ENGINE==="paddle"); $("engineHint").style.display=isP?"block":"none"; $("paddleDiagBtn").style.display=isP?"inline-flex":"none"; $("geminiKeyField").style.display=(ENGINE==="gemini")?"block":"none"; $("groqKeyField").style.display=(ENGINE==="groq")?"block":"none"; $("orKeyField").style.display=(ENGINE==="openrouter")?"block":"none"; const fb=$("aiFallbackWrap"); if(fb) fb.style.display=isVisionEngine(ENGINE)?"block":"none"; });
 $("paddleDiagBtn").addEventListener("click", async function(){
   const btn=this,old=btn.innerHTML; btn.disabled=true;
   btn.innerHTML='<svg class="spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Running checks...';
@@ -1337,7 +1367,112 @@ class GeminiAdapter extends OcrAdapter {
 }
 
 let tessAdapter=new TesseractAdapter(), paddleAdapter=new PaddleOcrAdapter(), geminiAdapter=new GeminiAdapter();
-function currentAdapter(){ return ENGINE==="paddle"?paddleAdapter:(ENGINE==="gemini"?geminiAdapter:tessAdapter); }
+
+/* ============================================================
+   EXTRA CLOUD VISION PROVIDERS (Groq, OpenRouter) - both free tier.
+   Both speak the OpenAI chat/completions shape with an image_url part,
+   so one request function + one adapter class serves both. They give
+   OCR Studio resilient alternatives when Gemini returns 429 / 503.
+   ============================================================ */
+function authErr(label){ const e=new Error("A "+label+" API key is required. Add it under the OCR engine settings."); e.auth=true; e.noKey=true; return e; }
+
+/* Groq - free tier, no card, Llama 4 vision, very fast. */
+const GROQ_ENDPOINT="https://api.groq.com/openai/v1/chat/completions";
+const GROQ_MODELS={ "meta-llama/llama-4-scout-17b-16e-instruct":1, "meta-llama/llama-4-maverick-17b-128e-instruct":1 };
+const GROQ_MODEL_DEFAULT="meta-llama/llama-4-scout-17b-16e-instruct";
+let GROQ_MODEL=(function(){ try{ var m=localStorage.getItem("groq_model"); return (m&&GROQ_MODELS[m])?m:GROQ_MODEL_DEFAULT; }catch(e){ return GROQ_MODEL_DEFAULT; } })();
+function setGroqModel(m){ if(!m||!GROQ_MODELS[m]) return; GROQ_MODEL=m; try{ localStorage.setItem("groq_model",m); }catch(e){} }
+function getGroqKey(){ const f=$("groqKey"), v=(f&&f.value)?f.value.trim():""; if(v){ try{ localStorage.setItem("groq_key",v); }catch(e){} return v; } let s=null; try{ s=localStorage.getItem("groq_key"); }catch(e){} return s?s.trim():""; }
+function groqCfg(){ const k=getGroqKey(); if(!k) throw authErr("Groq"); return { id:"groq", label:"Groq", endpoint:GROQ_ENDPOINT, key:k, model:GROQ_MODEL, headers:null }; }
+
+/* OpenRouter - free tier, no card; free vision models end in :free, and the
+   openrouter/free router auto-picks an available free vision model. */
+const OR_ENDPOINT="https://openrouter.ai/api/v1/chat/completions";
+const OR_MODELS={ "meta-llama/llama-4-maverick:free":1, "meta-llama/llama-4-scout:free":1, "openrouter/free":1 };
+const OR_MODEL_DEFAULT="meta-llama/llama-4-maverick:free";
+let OR_MODEL=(function(){ try{ var m=localStorage.getItem("or_model"); return (m&&OR_MODELS[m])?m:OR_MODEL_DEFAULT; }catch(e){ return OR_MODEL_DEFAULT; } })();
+function setOrModel(m){ if(!m||!OR_MODELS[m]) return; OR_MODEL=m; try{ localStorage.setItem("or_model",m); }catch(e){} }
+function getOrKey(){ const f=$("orKey"), v=(f&&f.value)?f.value.trim():""; if(v){ try{ localStorage.setItem("or_key",v); }catch(e){} return v; } let s=null; try{ s=localStorage.getItem("or_key"); }catch(e){} return s?s.trim():""; }
+function orCfg(){ const k=getOrKey(); if(!k) throw authErr("OpenRouter"); return { id:"openrouter", label:"OpenRouter", endpoint:OR_ENDPOINT, key:k, model:OR_MODEL, headers:{ "X-Title":"OCR Studio" } }; }
+
+/* one request for any OpenAI-compatible vision endpoint, with 429/503/5xx
+   exponential backoff that honours Retry-After. Errors are tagged:
+   e.auth (bad/missing key) | e.retryable (busy/unavailable/network). */
+async function openaiVisionRequest(cfg, b64, prompt, progress){
+  const body={ model:cfg.model, temperature:0, messages:[{ role:"user", content:[
+    { type:"text", text:prompt },
+    { type:"image_url", image_url:{ url:"data:image/jpeg;base64,"+b64 } }
+  ]}] };
+  let response=null, delay=1200, lastErr=null;
+  for(let i=0;i<5;i++){
+    try{
+      response=await fetch(cfg.endpoint, { method:"POST",
+        headers:Object.assign({ "Content-Type":"application/json", "Authorization":"Bearer "+cfg.key }, cfg.headers||{}),
+        credentials:"omit", mode:"cors", body:JSON.stringify(body) });
+      if(response.ok) break;
+      if(response.status===401||response.status===403){ const e=new Error(cfg.label+" rejected the key (HTTP "+response.status+")."); e.code=response.status; e.auth=true; throw e; }
+      lastErr=new Error(cfg.label+" is busy (HTTP "+response.status+")."); lastErr.code=response.status; lastErr.retryable=true;
+      const ra=parseInt((response.headers&&response.headers.get&&response.headers.get("retry-after"))||"",10);
+      if(!isNaN(ra)&&ra>0) delay=Math.min(Math.max(delay, ra*1000), 20000);
+    }catch(e){ if(e&&e.auth) throw e; lastErr=e||lastErr; if(lastErr) lastErr.retryable=true; }
+    if(i<4){ if(progress) progress(cfg.label+" busy \u2014 retrying..."); await new Promise(function(r){ setTimeout(r,delay); }); delay=Math.min(delay*2, 20000); }
+  }
+  if(!response||!response.ok){ const e=lastErr||new Error("Network error contacting "+cfg.label+"."); e.retryable=true; throw e; }
+  let data; try{ data=await response.json(); }catch(e){ const er=new Error(cfg.label+" returned an invalid response."); er.retryable=true; throw er; }
+  const msg=data&&data.choices&&data.choices[0]&&data.choices[0].message;
+  let txt=msg?msg.content:"";
+  if(Array.isArray(txt)) txt=txt.map(function(p){ return (p&&(p.text||p.content))||""; }).join("");
+  if(!txt||!String(txt).trim()) throw new Error(cfg.label+" returned an empty response for this page.");
+  return String(txt);
+}
+
+class OpenAIVisionAdapter extends OcrAdapter {
+  constructor(id,label,cfgFn){ super(); this._id=id; this._label=label; this._cfgFn=cfgFn; }
+  get id(){ return this._id; }
+  get label(){ return this._label; }
+  async recognize(canvas, opts, progress){
+    if(progress) progress("Encoding page for "+this._label+"...");
+    const b64=canvasJpegB64(downscaleForVision(canvas),0.85);
+    if(progress) progress(this._label+" is reading the page...");
+    const cfg=this._cfgFn();
+    const text=await openaiVisionRequest(cfg, b64, GEMINI_OCR_PROMPT, progress);
+    return { text:stripFences(text), confidence:null, lines:[] };
+  }
+}
+
+let groqAdapter=new OpenAIVisionAdapter("groq","Groq",groqCfg);
+let orAdapter=new OpenAIVisionAdapter("openrouter","OpenRouter",orCfg);
+const VISION_ADAPTERS={ gemini:geminiAdapter, groq:groqAdapter, openrouter:orAdapter };
+function isVisionEngine(id){ return !!VISION_ADAPTERS[id]; }
+function visionHasKey(id){ if(id==="gemini") return !!getGeminiKey(); if(id==="groq") return !!getGroqKey(); if(id==="openrouter") return !!getOrKey(); return false; }
+function visionModelStr(id){ return id==="gemini"?GEMINI_MODEL:(id==="groq"?GROQ_MODEL:(id==="openrouter"?OR_MODEL:"")); }
+function currentAdapter(){ if(ENGINE==="paddle") return paddleAdapter; if(VISION_ADAPTERS[ENGINE]) return VISION_ADAPTERS[ENGINE]; return tessAdapter; }
+
+/* Try the chosen cloud vision engine; if it is rate-limited / unavailable and
+   auto-fallback is on, transparently try the other engines that have a key. */
+async function visionRecognizeWithFallback(primaryId, canvas, progress){
+  const fb=$("aiFallback"); const fallbackOn = fb ? fb.checked : true;
+  const others=["gemini","groq","openrouter"].filter(function(x){ return x!==primaryId && visionHasKey(x); });
+  const order=[primaryId].concat(fallbackOn?others:[]);
+  let lastErr=null;
+  for(let k=0;k<order.length;k++){
+    const id=order[k], ad=VISION_ADAPTERS[id];
+    try{
+      if(k>0 && progress) progress("Previous engine busy \u2014 switching to "+ad.label+"...");
+      const res=await ad.recognize(canvas, {}, progress);
+      return { res:res, id:id, label:ad.label };
+    }catch(e){
+      lastErr=e;
+      if(k===0){
+        if(e && e.auth) throw e;            /* primary key missing/bad -> surface now */
+        if(!fallbackOn) throw e;            /* fallback disabled */
+        if(!(e && e.retryable)) throw e;    /* non-retryable error on primary */
+      }
+      /* fallback engines: any failure -> try the next configured one */
+    }
+  }
+  throw lastErr || new Error("All cloud vision engines failed.");
+}
 
 
 /* ---- auto-optimize grid ---- */
@@ -1412,16 +1547,17 @@ runBtn.addEventListener("click", async function(){
         page.cleanup();
       }
 
-      let resultText="",resultConf=0,resultThumb=null,resultTag="",resultLines=[],resultAspect=1.414;
+      let resultText="",resultConf=0,resultThumb=null,resultTag="",resultLines=[],resultAspect=1.414,resultEngineLabel=ENGINE_LABELS[ENGINE]||"";
 
-      if(ENGINE==="gemini"){
+      if(isVisionEngine(ENGINE)){
         pSub.textContent="Rendering page..."; await yieldUI();
         const raw=await renderRaw(job,200,adv);
         resultThumb=thumbDataURL(raw); resultAspect=raw.height/raw.width;
         setBar(baseFrac+span*0.2);
-        const res=await geminiAdapter.recognize(raw,{},function(m){ if(m) pSub.textContent=m; });
-        resultText=res.text||""; resultConf=null; resultLines=[];
-        resultTag="Gemini Vision \u00b7 "+GEMINI_MODEL;
+        const v=await visionRecognizeWithFallback(ENGINE, raw, function(m){ if(m) pSub.textContent=m; });
+        resultText=v.res.text||""; resultConf=null; resultLines=[];
+        resultEngineLabel=v.label;
+        resultTag=v.label+" \u00b7 "+visionModelStr(v.id);
         disposeCanvas(raw); setBar(baseFrac+span*0.95);
       } else if(ENGINE==="paddle"){
         jobProgress=function(p){ setBar(baseFrac+span*p); };
@@ -1471,7 +1607,7 @@ runBtn.addEventListener("click", async function(){
 
       resultText=postProcess(resultText,tidyOn,splitOn);
       if(LAST_PAGES[i]){ LAST_PAGES[i].lines=resultLines; LAST_PAGES[i].aspect=resultAspect; }
-      collected.push({label:job.label,text:resultText,conf:resultConf,source:resultTag,thumb:resultThumb,engine:ENGINE_LABELS[ENGINE]});
+      collected.push({label:job.label,text:resultText,conf:resultConf,source:resultTag,thumb:resultThumb,engine:resultEngineLabel});
       saveRunCheckpoint(collected);
       job.done(); setBar((i+1)/jobs.length);
     }
@@ -2374,6 +2510,14 @@ function resetAiProcState(){ RAW_STRUCT_BACKUP=null; const r=$("aiProcRevert"); 
 
 /* pre-select + persist the Gemini model choice */
 (function(){ const sel=$("geminiModel"); if(!sel) return; if(GEMINI_MODEL&&GEMINI_MODELS[GEMINI_MODEL]) sel.value=GEMINI_MODEL; sel.addEventListener("change",function(){ setGeminiModel(sel.value); showToast("Gemini model set to "+sel.value,false); }); })();
+
+/* pre-fill + persist Groq and OpenRouter keys + model choices */
+(function(){
+  function bindKey(id,storeKey){ const f=$(id); if(!f) return; try{ const s=localStorage.getItem(storeKey); if(s&&!f.value) f.value=s; }catch(e){} f.addEventListener("input",function(){ const v=f.value.trim(); if(v){ try{ localStorage.setItem(storeKey,v); }catch(e){} } }); }
+  bindKey("groqKey","groq_key"); bindKey("orKey","or_key");
+  const gm=$("groqModel"); if(gm){ if(GROQ_MODELS[GROQ_MODEL]) gm.value=GROQ_MODEL; gm.addEventListener("change",function(){ setGroqModel(gm.value); }); }
+  const om=$("orModel"); if(om){ if(OR_MODELS[OR_MODEL]) om.value=OR_MODEL; om.addEventListener("change",function(){ setOrModel(om.value); }); }
+})();
 
 /* "Organize with AI while scanning" toggle + level, persisted in this browser */
 (function(){
